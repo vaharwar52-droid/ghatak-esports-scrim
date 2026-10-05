@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>GHATAK ESPORTS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{color-scheme:dark;--bg:#070707;--surface:#111;--surface2:#181818;--blue:#2869ef;--text:#f4f4f4;--muted:#8d8f98;--line:#242424;--gold:#ffd31a;--danger:#ff5656;--green:#35d07f}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#050505;color:var(--text);font-family:Arial,Helvetica,sans-serif}body{display:flex;justify-content:center}.app{width:100%;max-width:520px;min-height:100vh;background:var(--bg);padding-bottom:86px}.topbar{height:72px;background:#000;border-bottom:1px solid #171717;display:flex;align-items:center;justify-content:space-between;padding:0 20px;position:sticky;top:0;z-index:10}.brand{display:flex;align-items:center;gap:10px;font-weight:900;font-size:21px}.brandMark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(145deg,#0a73bd,#071b35)}.brand span{color:#2772f5}.top-actions{display:flex;gap:8px}.top-actions button{background:#151515;border:1px solid #292929;color:#fff;border-radius:10px;padding:9px;font-weight:800}.page{padding:26px 20px}.hero{border-radius:18px;border:1px solid #7c6a20;background:linear-gradient(135deg,#17130a,#3a2a06 55%,#0d0d0d);padding:20px;min-height:180px;position:relative;overflow:hidden}.hero h2{margin:0;font-size:34px;color:#ffcf00}.hero p{max-width:290px;color:#d7d7d7;font-size:13px;font-weight:700}.sectionTitle{font-size:24px;font-weight:950;margin:30px 0 18px}.team,.ranking,.card,.tournament{background:#111;border:1px solid #242424;border-radius:18px;padding:16px;margin:12px 0}.team,.ranking{display:flex;align-items:center;gap:14px}.rank,.num{width:42px;height:42px;border-radius:10px;background:#171717;display:grid;place-items:center;font-weight:950}.teamInfo,.grow{flex:1}.teamName{font-weight:950;font-size:18px}.stats,.muted{color:var(--muted);font-size:12px;margin-top:6px}.points{font-size:25px;font-weight:950}.bottom{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;height:78px;background:#020202;border-top:1px solid #171717;display:grid;grid-template-columns:repeat(5,1fr);z-index:20}.nav{border:0;background:transparent;color:#6c6d75;font-size:11px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}.nav.active{color:#2e78ff}.primary{width:100%;border:0;border-radius:15px;background:linear-gradient(100deg,#3a7ff8,#1e5de0);color:white;padding:15px;font-weight:950;font-size:16px;margin-top:14px}.input{width:100%;padding:14px;border-radius:12px;background:#090909;border:1px solid #292929;color:#fff;margin:6px 0 10px}.hidden{display:none!important}.badge{display:inline-block;padding:6px 9px;border-radius:8px;background:#17356f;color:#71a2ff;font-size:10px;font-weight:950}.danger{color:var(--danger)}.success{color:var(--green)}.modal{position:fixed;inset:0;background:#000b;display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}.modal>div{width:100%;max-width:480px;background:#111;border:1px solid #333;border-radius:18px;padding:20px;max-height:90vh;overflow:auto}.modal h2{margin-top:0}.close{float:right;background:none;border:0;color:#aaa;font-size:25px}.admin{border-color:#5c4b0b;background:linear-gradient(135deg,#15120a,#101010)}
+</style></head>
+<body><div class="app">
+<header class="topbar"><div class="brand"><div class="brandMark">⚔</div>GHATAK <span>ESPORTS</span></div><div class="top-actions"><button id="authBtn">Login</button></div></header>
+<main id="content"></main>
+<nav class="bottom"><button class="nav active" data-page="home">⌂<span>Home</span></button><button class="nav" data-page="scrims">♛<span>Scrims</span></button><button class="nav" data-page="rankings">▥<span>Rankings</span></button><button class="nav" data-page="tournaments">♜<span>Tours</span></button><button class="nav" data-page="profile">♙<span>Profile</span></button></nav>
+</div><div id="modalRoot"></div>
+<script>
+const SUPABASE_URL='https://afnlreofqfaeetrisgir.supabase.co';
+const SUPABASE_KEY='sb_publishable_KUeIL47T_Un90ntXXvv2iA_LCW9mBDD';
+
+let db = null;
+let page='home', user=null, profile=null, rankings=[], tournaments=[], teams=[];
+const content=document.getElementById('content');
+const modalRoot=document.getElementById('modalRoot');
+
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function showError(message){
+  console.warn(message);
+}
+
+function initSupabase(){
+  try{
+    if(window.supabase && typeof window.supabase.createClient==='function'){
+      db=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+      db.auth.onAuthStateChange(()=>setTimeout(load,0));
+      return true;
+    }
+  }catch(e){ console.error(e); }
+  return false;
+}
+
+async function load(){
+  // Always render the UI first. A slow/failed database must never disable taps.
+  render();
+  if(!db) return;
+
+  try{
+    const {data:{user:u}}=await db.auth.getUser();
+    user=u||null;
+    profile=null;
+
+    if(user){
+      const r=await db.from('profiles').select('*').eq('id',user.id).maybeSingle();
+      profile=r.data||null;
+    }
+
+    const l=await db.from('leaderboard').select('*,teams(name,tag)').order('total_points',{ascending:false}).limit(50);
+    rankings=l.data||[];
+
+    const t=await db.from('tournaments').select('*').order('tournament_start',{ascending:true,nullsFirst:false});
+    tournaments=t.data||[];
+
+    const tm=await db.from('teams').select('*').order('name');
+    teams=tm.data||[];
+
+    updateAuth();
+    render();
+  }catch(e){
+    console.error('Database load error:',e);
+    updateAuth();
+    render();
+  }
+}
+
+function updateAuth(){
+  const b=document.getElementById('authBtn');
+  if(!b)return;
+  b.textContent=user?(profile?.role==='admin'?'Admin':'Logout'):'Login';
+  b.onclick=()=>user?(profile?.role==='admin'?admin():logout()):auth();
+}
+
+function nav(){
+  document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
+}
+
+function render(){
+  nav();
+  if(page==='home')home();
+  else if(page==='scrims')scrims();
+  else if(page==='rankings')rankingPage();
+  else if(page==='tournaments')tournamentPage();
+  else if(page==='profile')profilePage();
+}
+
+function home(){
+  content.innerHTML=`<section class="page">
+    <div class="muted">WELCOME${user?', '+esc(profile?.username||'PLAYER'):''}</div>
+    <h1>PLAY. COMPETE. <span style="color:#2f78ff">CLIMB.</span></h1>
+    <div class="hero"><h2>GHATAK ESPORTS</h2><p>Daily scrims, tournaments and live rankings — powered by Supabase.</p><div class="badge">LIVE PLATFORM</div></div>
+    <h2 class="sectionTitle">TOP TEAMS</h2>
+    ${rankings.slice(0,5).map((r,i)=>team(r,i)).join('')||'<div class="card">No leaderboard data yet.</div>'}
+    ${user?'<button class="primary" onclick="goTo(\'profile\')">MY PROFILE</button>':'<button class="primary" onclick="auth()">JOIN GHATAK ESPORTS</button>'}
+  </section>`;
+}
+
+function goTo(p){
+  page=p;
+  render();
+}
+
+function team(r,i){
+  return `<div class="team"><div class="rank">#${i+1}</div><div class="teamInfo"><div class="teamName">${esc(r.teams?.name||r.team_id||'Team')}</div><div class="stats">⚔ ${r.total_kills||0} KILLS · 🏆 ${r.total_matches||r.matches_played||0} MATCHES</div></div><b>${r.total_points||0} PTS</b></div>`;
+}
+
+function scrims(){
+  content.innerHTML=`<section class="page"><h2>DAILY SCRIMS</h2>
+    <div class="card"><span class="badge">DAILY SCRIMS</span><h3>₹25 Scrim Entry</h3>
+    <p class="muted">Daily scrim slots admin ke dwara publish kiye jayenge. Entry ke liye ₹25 payment karein.</p>
+    <div class="card">
+      <b>UPI PAYMENT</b>
+      <p class="muted">UPI ID: <b style="color:#fff">9202145156@ybl</b></p>
+      <p class="muted">Payment ke baad UTR / Transaction ID save rakhein.</p>
+    </div>
+    ${user?'<button class="primary" onclick="goTo(\'tournaments\')">JOIN SCRIM & PAY ₹25</button>':'<button class="primary" onclick="auth()">LOGIN TO JOIN</button>'}</div></section>`;
+}
+
+function rankingPage(){
+  content.innerHTML=`<section class="page"><h2>RANKINGS</h2>${rankings.map((r,i)=>team(r,i)).join('')||'<div class="card">No rankings yet. Add match results from Admin.</div>'}</section>`;
+}
+
+function tournamentPage(){
+  content.innerHTML=`<section class="page"><h2>TOURNAMENTS</h2>
+  ${tournaments.map(t=>`<div class="tournament"><span class="badge">${esc((t.status||'UPCOMING').toUpperCase())}</span>
+  <h3>${esc(t.name)}</h3><div class="muted">${esc(t.game_name||'BGMI')} · Entry ₹${Number(t.entry_fee||0)} · Prize ₹${Number(t.prize_pool||0)}</div>
+  <p class="muted">${esc(t.description||'')}</p>
+  ${t.max_teams?`<div class="muted">Max teams: ${t.max_teams}</div>`:''}
+  <button class="primary" onclick="registerTournament('${esc(t.id)}')">${user?'REGISTER TEAM':'LOGIN TO REGISTER'}</button></div>`).join('')||
+  '<div class="card">No tournaments yet. Admin can create the first one.</div>'}</section>`;
+}
+
+function profilePage(){
+  content.innerHTML=`<section class="page"><h2>PROFILE</h2>${user?
+  `<div class="card"><h2>${esc(profile?.full_name||profile?.username||'Player')}</h2><div class="muted">${esc(user.email)}</div><div class="badge">${esc(profile?.role||'user').toUpperCase()}</div></div>
+  ${profile?.role==='admin'?'<button class="primary" onclick="admin()">OPEN ADMIN PANEL</button>':''}
+  <button class="primary" style="background:#222" onclick="logout()">LOGOUT</button>`:
+  `<div class="card"><h3>Login to GHATAK ESPORTS</h3><p class="muted">Use your Supabase account to access your profile and registrations.</p><button class="primary" onclick="auth()">LOGIN / SIGN UP</button></div>`}</section>`;
+}
+
+function auth(){
+  modal(`<h2>GHATAK ACCOUNT</h2>
+    <input class="input" id="email" type="email" placeholder="Email" autocomplete="email">
+    <input class="input" id="password" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="primary" id="login">LOGIN</button>
+    <button class="primary" style="background:#222" id="signup">CREATE ACCOUNT</button>
+    <p class="muted">Your account is secured by Supabase Auth.</p>`);
+
+  document.getElementById('login').onclick=async()=>{
+    if(!db)return alert('Database is still connecting. Please try again in a moment.');
+    const e=document.getElementById('email').value.trim(),p=document.getElementById('password').value;
+    if(!e||!p)return alert('Email and password required');
+    const {error}=await db.auth.signInWithPassword({email:e,password:p});
+    if(error)alert(error.message);
+    else{closeModal();await load();}
+  };
+
+  document.getElementById('signup').onclick=async()=>{
+    if(!db)return alert('Database is still connecting. Please try again in a moment.');
+    const e=document.getElementById('email').value.trim(),p=document.getElementById('password').value;
+    if(!e||!p)return alert('Email and password required');
+    if(p.length<6)return alert('Password must be at least 6 characters');
+    const username=e.split('@')[0];
+    const {data,error}=await db.auth.signUp({email:e,password:p,data:{username}});
+    if(error)alert(error.message);
+    else if(data.user){alert('Account created. Check email if confirmation is enabled.');}
+  };
+}
+
+async function logout(){
+  if(db) await db.auth.signOut();
+  user=null; profile=null;
+  closeModal();
+  render();
+}
+
+async function registerTournament(id){
+  if(!user){auth();return;}
+  if(!db){alert('Database is not connected yet.');return;}
+  const t=tournaments.find(x=>String(x.id)===String(id));
+  if(!t)return alert('Tournament not found');
+
+  if(!teams.length){
+    return modal(`<h2>CREATE YOUR TEAM</h2><p class="muted">You need a team before registering.</p>
+      <input class="input" id="teamName" placeholder="Team name">
+      <input class="input" id="teamTag" placeholder="Team tag">
+      <button class="primary" onclick="createTeamAndRegister('${esc(id)}')">CREATE TEAM & REGISTER</button>`);
+  }
+
+  modal(`<h2>REGISTER TEAM</h2><p class="muted">${esc(t.name)}</p>
+    <div class="card">
+      <span class="badge">PAYMENT REQUIRED</span>
+      <h3>Scrim Entry Fee: ₹${Number(t.entry_fee||25)}</h3>
+      <p class="muted">UPI ID: <b style="color:#fff">9202145156@ybl</b></p>
+      <p class="muted">Payment karne ke baad UTR / Transaction ID neeche enter karein.</p>
+    </div>
+    <select class="input" id="teamSelect">${teams.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}${x.tag?' ['+esc(x.tag)+']':''}</option>`).join('')}</select>
+    <input class="input" id="utr" placeholder="UPI UTR / Transaction ID">
+    <button class="primary" onclick="submitRegistration('${esc(id)}')">PAYMENT DONE & REGISTER</button>`);
+}
+
+async function createTeamAndRegister(tid){
+  if(!db){alert('Database is not connected yet.');return;}
+  const name=document.getElementById('teamName').value.trim(),tag=document.getElementById('teamTag').value.trim();
+  if(!name)return alert('Team name required');
+  const {data,error}=await db.from('teams').insert({name,tag,owner_id:user.id}).select().single();
+  if(error)return alert(error.message);
+  teams.push(data);closeModal();await submitRegistration(tid,data.id);
+}
+
+async function submitRegistration(tid,forcedTeamId){
+  if(!db){alert('Database is not connected yet.');return;}
+  const teamId=forcedTeamId||document.getElementById('teamSelect')?.value;
+  if(!teamId)return alert('Select a team');
+  const utr=document.getElementById('utr')?.value.trim();
+  if(!utr)return alert('Payment ke baad UTR / Transaction ID enter karein.');
+  const payload={tournament_id:tid,team_id:teamId,user_id:user.id,status:'pending',payment_status:'pending',payment_utr:utr};
+  const {error}=await db.from('tournament_registrations').insert(payload);
+  if(error){
+    if(/duplicate|unique/i.test(error.message))alert('This team is already registered.');
+    else alert(error.message);
+    return;
+  }
+  closeModal();alert('Registration submitted successfully!');await load();
+}
+
+async function admin(){
+  if(!profile||profile.role!=='admin'){alert('Admin access required');return;}
+  modal(`<h2>ADMIN PANEL</h2>
+  <div class="card admin"><b>GHATAK ESPORTS ADMIN</b><p class="muted">Manage tournaments and see scrim bookings with the user's team name.</p></div>
+  <h3>SCRIM BOOKINGS</h3>
+  <div id="adminBookings" class="card"><div class="muted">Loading bookings...</div></div>
+  <h3>Create Tournament / Scrim Slot</h3>
+  <input class="input" id="tn" placeholder="Tournament / Scrim name">
+  <input class="input" id="tg" placeholder="Game name (BGMI)">
+  <input class="input" id="te" type="number" placeholder="Entry fee">
+  <input class="input" id="tp" type="number" placeholder="Prize pool">
+  <input class="input" id="tm" type="number" placeholder="Max teams">
+  <input class="input" id="ts" type="datetime-local">
+  <textarea class="input" id="td" placeholder="Description"></textarea>
+  <button class="primary" id="createT">CREATE TOURNAMENT</button>
+  <h3>Existing tournaments</h3>
+  ${tournaments.map(t=>`<div class="card"><b>${esc(t.name)}</b><div class="muted">${esc(t.status||'upcoming')} · ₹${Number(t.prize_pool||0)}</div>
+  <button class="primary" style="background:#222" onclick="deleteTournament('${esc(t.id)}')">DELETE</button></div>`).join('')||'<div class="muted">None yet.</div>'}`);
+  document.getElementById('createT').onclick=createTournament;
+  await loadAdminBookings();
+}
+
+async function loadAdminBookings(){
+  const box=document.getElementById('adminBookings');
+  if(!box||!db)return;
+  try{
+    const r=await db.from('tournament_registrations')
+      .select('id,tournament_id,team_id,user_id,status,payment_status,payment_utr,created_at')
+      .order('created_at',{ascending:false}).limit(100);
+    if(r.error) throw r.error;
+    const rows=r.data||[];
+    if(!rows.length){box.innerHTML='<div class="muted">Abhi koi scrim booking nahi hai.</div>';return;}
+
+    const teamIds=[...new Set(rows.map(x=>x.team_id).filter(Boolean))];
+    const tournamentIds=[...new Set(rows.map(x=>x.tournament_id).filter(Boolean))];
+
+    const [tr,tor]=await Promise.all([
+      teamIds.length?db.from('teams').select('id,name,tag').in('id',teamIds):Promise.resolve({data:[]}),
+      tournamentIds.length?db.from('tournaments').select('id,name').in('id',tournamentIds):Promise.resolve({data:[]})
+    ]);
+    const teamMap=Object.fromEntries((tr.data||[]).map(x=>[x.id,x]));
+    const tourMap=Object.fromEntries((tor.data||[]).map(x=>[x.id,x]));
+
+    box.innerHTML=rows.map(x=>{
+      const tm=teamMap[x.team_id]||{};
+      const tour=tourMap[x.tournament_id]||{};
+      const teamName=tm.name||'Team name not found';
+      return `<div style="border:1px solid #292929;border-radius:12px;padding:14px;margin:10px 0;background:#090909">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+          <div><b style="font-size:17px">${esc(teamName)}</b>${tm.tag?` <span class="muted">[${esc(tm.tag)}]</span>`:''}
+          <div class="muted">👤 User ID: ${esc(x.user_id||'—')} · 🎮 ${esc(tour.name||'Scrim')}</div></div>
+          <span class="badge">${esc((x.status||'pending').toUpperCase())}</span>
+        </div>
+        <div class="muted" style="margin-top:8px">Payment: ${esc(x.payment_status||'pending')} · UTR: ${esc(x.payment_utr||'—')}</div>
+        <div class="muted" style="margin-top:5px">Booking ID: ${esc(x.id)}${x.created_at?' · '+new Date(x.created_at).toLocaleString():''}</div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    console.error(e);
+    box.innerHTML=`<div class="danger">Bookings load nahi ho paaye: ${esc(e.message||e)}</div><div class="muted">Agar RLS error aaye to admin SELECT policy check karni hogi.</div>`;
+  }
+}
+
+async function createTournament(){
+  if(!db){alert('Database is not connected yet.');return;}
+  const name=document.getElementById('tn').value.trim();
+  if(!name)return alert('Tournament name required');
+  const slug=name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'')+'-'+Date.now();
+  const start=document.getElementById('ts').value||null;
+  const payload={name,slug,game_name:document.getElementById('tg').value||'BGMI',
+    entry_fee:Number(document.getElementById('te').value||0),prize_pool:Number(document.getElementById('tp').value||0),
+    max_teams:Number(document.getElementById('tm').value||100),description:document.getElementById('td').value||'',
+    status:'upcoming',created_by:user.id};
+  if(start)payload.tournament_start=new Date(start).toISOString();
+  const {error}=await db.from('tournaments').insert(payload);
+  if(error)alert(error.message);else{closeModal();await load();alert('Tournament created successfully');}
+}
+
+async function deleteTournament(id){
+  if(!db){alert('Database is not connected yet.');return;}
+  if(!confirm('Delete this tournament?'))return;
+  const {error}=await db.from('tournaments').delete().eq('id',id);
+  if(error)alert(error.message);else{closeModal();await load();alert('Tournament deleted');}
+}
+
+function modal(html){
+  modalRoot.innerHTML=`<div class="modal"><div><button class="close" onclick="closeModal()">×</button>${html}</div></div>`;
+}
+function closeModal(){modalRoot.innerHTML='';}
+
+// Bind navigation immediately, before any network/database call.
+document.querySelectorAll('[data-page]').forEach(b=>{
+  b.addEventListener('click',e=>{
+    e.preventDefault();
+    page=b.dataset.page;
+    render();
+  });
+});
+
+updateAuth();
+render();
+
+// Load Supabase after the UI is already interactive.
+if(initSupabase()) load();
+</script></body></html>
